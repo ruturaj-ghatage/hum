@@ -79,7 +79,7 @@ final class NowPlaying: ObservableObject {
     private func send(_ command: String) {
         guard isRunning(source) else { return }
         let app = source.rawValue
-        scriptQueue.async { Self.run("tell application \"\(app)\" to \(command)") }
+        scriptQueue.async { AppleScript.run("tell application \"\(app)\" to \(command)") }
     }
 
     // MARK: Notifications
@@ -157,7 +157,7 @@ final class NowPlaying: ObservableObject {
         end tell
         """
         scriptQueue.async {
-            guard let d = Self.run(script) else { return }
+            guard let d = AppleScript.run(script) else { return }
             let state = d.atIndex(1)?.stringValue?.lowercased() ?? "stopped"
             DispatchQueue.main.async {
                 guard state != "stopped", d.numberOfItems >= 7 else {
@@ -184,12 +184,12 @@ final class NowPlaying: ObservableObject {
             var image: NSImage?
             switch app {
             case .spotify:
-                if let s = Self.run("tell application \"Spotify\" to return artwork url of current track")?.stringValue,
+                if let s = AppleScript.run("tell application \"Spotify\" to return artwork url of current track")?.stringValue,
                    let url = URL(string: s), let data = try? Data(contentsOf: url) {
                     image = NSImage(data: data)
                 }
             case .music:
-                if let data = Self.run("tell application \"Music\" to return raw data of artwork 1 of current track")?.data {
+                if let data = AppleScript.run("tell application \"Music\" to return raw data of artwork 1 of current track")?.data {
                     image = NSImage(data: data)
                 }
             }
@@ -200,14 +200,6 @@ final class NowPlaying: ObservableObject {
                 self.tint = tint
             }
         }
-    }
-
-    @discardableResult
-    private static func run(_ source: String) -> NSAppleEventDescriptor? {
-        var error: NSDictionary?
-        let result = NSAppleScript(source: source)?.executeAndReturnError(&error)
-        if let error { NSLog("Hum AppleScript error: \(error)") }
-        return error == nil ? result : nil
     }
 
     /// Picks the most vivid color in the artwork, lifted so it reads on black.

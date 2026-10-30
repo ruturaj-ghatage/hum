@@ -1,0 +1,26 @@
+#!/bin/bash
+# Runs a command and shows it in the notch: an orange glow while it runs,
+# then a green or red ripple and a notification with how long it took.
+# Usage: hum-run npm test
+
+enc() {
+    local s="$1" out="" c i
+    for ((i = 0; i < ${#s}; i++)); do
+        c="${s:i:1}"
+        case "$c" in
+            [a-zA-Z0-9.~_-]) out+="$c" ;;
+            *) out+=$(printf '%%%02X' "'$c") ;;
+        esac
+    done
+    printf %s "$out"
+}
+
+[[ $# -eq 0 ]] && { echo "Usage: hum-run <command> [args...]" >&2; exit 2; }
+
+id="$$-$RANDOM"
+label=$(enc "$*")
+open -g "hum://task?event=start&id=$id&label=$label"
+"$@"
+code=$?
+open -g "hum://task?event=done&id=$id&label=$label&ok=$([[ $code -eq 0 ]] && echo 1 || echo 0)"
+exit $code

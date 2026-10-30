@@ -11,6 +11,8 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/Hum "$APP/Contents/MacOS/Hum"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+cp scripts/claude-hook.sh scripts/hum-run "$APP/Contents/Resources/"
+chmod +x "$APP/Contents/Resources/claude-hook.sh" "$APP/Contents/Resources/hum-run"
 codesign --force --sign - --identifier com.ruturaj.hum "$APP"
 echo "Built $APP"
 

@@ -18,12 +18,31 @@ Hum is a tiny menu bar app that turns the notch into a live music player for **S
 
 ## Features
 
+### Music
 - **Compact mode:** while music plays, the notch grows just enough to show the album art on one side and live bars on the other.
+- **Moves to the beat:** the bars follow the real audio (bass, mids, highs), and the notch bulges with every kick drum.
 - **Hover to expand:** shows the title, artist and album, a progress bar you can drag to seek, and previous / play-pause / next.
-- **Peek:** when a new song starts, the player drops down for 3 seconds and tucks back in.
-- **Adaptive color:** the bars and progress bar pick up the most vivid color in the album art.
-- **Click the art** to open Spotify or Music.
-- No Dock icon. Settings live in the menu bar, including **Launch at Login**.
+- **Physics:** pull the expanded player down and it springs back, fling it sideways to skip tracks, or flick it up to tuck it away.
+- **Peek:** when a new song starts, the new cover drips in and the player drops down for 3 seconds.
+- **Adaptive color and ambient glow:** everything picks up the album's most vivid color, including a faint light around your screen edges that breathes with the bass.
+
+### Focus Guardian
+- Start a 25, 50 or 90 minute focus session from the menu bar. A thin bar along the bottom of the notch fills up as time passes.
+- If you open a distracting app (Discord, Telegram…) or site (YouTube, X, Reddit…), the notch shakes and tells you to get back to work.
+
+### Claude Code and build status
+- While Claude Code is working, the notch glows **orange**. It turns **blue** when Claude needs your permission and ripples **green** when Claude is done.
+- Wrap any command with `hum-run` to get the same treatment: `hum-run npm test`.
+
+### Notifications from the notch
+Any script can slide a notification out of the notch:
+
+```bash
+open -g "hum://notify?title=Deploy%20done&body=api%20is%20live&symbol=checkmark.circle.fill&color=green"
+```
+
+### Settings
+Hover the notch and click ⚙️ to switch each feature on or off. The same switches are in the menu bar, along with **Launch at Login**.
 
 ## Install
 
@@ -48,9 +67,26 @@ Hum isn't notarized yet, so macOS blocks it the first time. Open **System Settin
 xattr -dr com.apple.quarantine /Applications/Hum.app
 ```
 
+### Claude Code status (optional)
+
+```bash
+./scripts/install-claude-hooks.sh
+```
+
+This adds Hum's hooks to `~/.claude/settings.json`. It keeps any hooks you already have and makes a backup first.
+
+### hum-run (optional)
+
+```bash
+ln -s ~/Applications/Hum.app/Contents/Resources/hum-run /usr/local/bin/hum-run
+```
+
 ### First launch
 
-macOS asks whether Hum can control Spotify (or Music). Click **OK**. Hum uses this to read the artwork and position and to send play/pause/skip.
+macOS asks a few things the first time each feature is used:
+- **Control Spotify / Music:** reads artwork and position, and sends play/pause/skip.
+- **System audio recording:** lets the notch move to the beat. Nothing is recorded or saved.
+- **Control your browser** (only during Focus): checks which site you're on.
 
 ## How it works
 
@@ -62,7 +98,11 @@ macOS asks whether Hum can control Spotify (or Music). Click **OK**. Hum uses th
 |---|---|
 | `Sources/Hum/NowPlaying.swift` | Player state, notifications, AppleScript, artwork tint |
 | `Sources/Hum/NotchController.swift` | Window placement, hover tracking, peek timer |
-| `Sources/Hum/NotchView.swift` | Notch shape, compact and expanded views |
+| `Sources/Hum/NotchView.swift` | Notch shape, compact/expanded/settings views, effects |
+| `Sources/Hum/AudioLevels.swift` | System audio tap and frequency bands |
+| `Sources/Hum/FocusGuardian.swift` | Focus timer and distraction detection |
+| `Sources/Hum/ActivityTracker.swift` | Claude Code sessions and `hum-run` tasks |
+| `scripts/claude-hook.sh`, `scripts/hum-run` | Send events to Hum over `hum://` |
 | `scripts/make-icon.swift` | Draws the app icon |
 | `build.sh` | Builds `build/Hum.app` (`./build.sh install` copies it to `~/Applications`) |
 | `release.sh` | Tags a version (e.g. `./release.sh 0.2.0`) for a minor or major release |
@@ -71,7 +111,6 @@ Every push to `main` that changes the app is built by GitHub Actions and publish
 
 ## Roadmap
 
-- [ ] Audio-reactive bars from real system audio
 - [ ] Synced lyrics
 - [ ] Signed and notarized releases, plus a Homebrew cask
 
