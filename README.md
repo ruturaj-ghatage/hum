@@ -65,6 +65,9 @@ macOS asks whether Hum can control Spotify (or Music). Click **OK**. Hum uses th
 | `Sources/Hum/NotchView.swift` | Notch shape, compact and expanded views |
 | `scripts/make-icon.swift` | Draws the app icon |
 | `build.sh` | Builds `build/Hum.app` (`./build.sh install` copies it to `~/Applications`) |
+| `release.sh` | Tags a version (e.g. `./release.sh 0.2.0`) for a minor or major release |
+
+Every push to `main` that changes the app is built by GitHub Actions and published as a new patch release automatically.
 
 ## Roadmap
 

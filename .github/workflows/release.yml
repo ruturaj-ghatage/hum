@@ -1,0 +1,59 @@
+name: Release
+
+# Every push to main that touches the app ships a new patch release (0.1.0 → 0.1.1).
+# Pushing a tag like v0.2.0 ships exactly that version, for bigger bumps.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Sources/**"
+      - "Resources/**"
+      - "Package.swift"
+      - "build.sh"
+      - ".github/workflows/release.yml"
+      - ".github/release-notes.md"
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-15
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pick version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            LAST=$(gh release view --json tagName -q .tagName 2>/dev/null || echo v0.0.0)
+            IFS=. read -r MAJOR MINOR PATCH <<< "${LAST#v}"
+            VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Releasing v$VERSION"
+
+      - name: Build Hum.app
+        run: |
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${{ steps.version.outputs.version }}" Resources/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ github.run_number }}" Resources/Info.plist
+          ./build.sh
+          ditto -c -k --keepParent build/Hum.app build/Hum.zip
+
+      - name: Publish release
+        run: |
+          gh release create "v${{ steps.version.outputs.version }}" build/Hum.zip \
+            --title "Hum v${{ steps.version.outputs.version }}" \
+            --target "$GITHUB_SHA" \
+            --notes-file .github/release-notes.md \
+            --generate-notes

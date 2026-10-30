@@ -1,0 +1,24 @@
+{
+  "configurations": [
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:Hum}",
+      "name": "Debug Hum",
+      "target": "Hum",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug Hum"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:Hum}",
+      "name": "Release Hum",
+      "target": "Hum",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release Hum"
+    }
+  ]
+}
