@@ -5,12 +5,14 @@ final class FocusGuardian: ObservableObject {
     @Published private(set) var endsAt: Date?
     @Published private(set) var duration: TimeInterval = 0
     @Published private(set) var slips = 0
+    @Published private(set) var pausedAt: Date?
 
     var onStart: ((Int) -> Void)?
     var onDistracted: ((TimeInterval) -> Void)?
     var onFinish: ((Int) -> Void)?
 
     var isActive: Bool { endsAt != nil }
+    var isPaused: Bool { pausedAt != nil }
 
     private var timer: Timer?
     private var lastNudge = Date.distantPast
@@ -35,7 +37,7 @@ final class FocusGuardian: ObservableObject {
 
     func remaining(at date: Date = Date()) -> TimeInterval {
         guard let endsAt else { return 0 }
-        return max(endsAt.timeIntervalSince(date), 0)
+        return max(endsAt.timeIntervalSince(pausedAt ?? date), 0)
     }
 
     func progress(at date: Date = Date()) -> Double {
@@ -46,6 +48,7 @@ final class FocusGuardian: ObservableObject {
         duration = TimeInterval(minutes * 60)
         endsAt = Date().addingTimeInterval(duration)
         slips = 0
+        pausedAt = nil
         lastNudge = Date() // grace period right after starting
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in self?.tick() }
@@ -58,14 +61,28 @@ final class FocusGuardian: ObservableObject {
         duration += TimeInterval(minutes * 60)
     }
 
+    /// Freezes the countdown (e.g. while you're away from the Mac).
+    func pause() {
+        guard isActive, pausedAt == nil else { return }
+        pausedAt = Date()
+    }
+
+    func resume() {
+        guard let p = pausedAt, let endsAt else { return }
+        self.endsAt = endsAt.addingTimeInterval(Date().timeIntervalSince(p))
+        pausedAt = nil
+        lastNudge = Date()
+    }
+
     func stop() {
         endsAt = nil
+        pausedAt = nil
         timer?.invalidate()
         timer = nil
     }
 
     private func tick() {
-        guard let endsAt else { return }
+        guard let endsAt, pausedAt == nil else { return }
         if Date() >= endsAt {
             let s = slips
             stop()

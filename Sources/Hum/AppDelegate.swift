@@ -8,12 +8,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let tracker = ActivityTracker()
     let levels = AudioLevels()
     let settings = Settings.shared
+    let camera = CameraSensor()
+    /// Music we paused because you walked away, so we only resume what we stopped.
+    private var pausedForAway = false
     private var notch: NotchController!
     private var statusItem: NSStatusItem!
     private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        notch = NotchController(player: player, focus: focus, tracker: tracker, settings: settings, levels: levels)
+        notch = NotchController(player: player, focus: focus, tracker: tracker, settings: settings, levels: levels,
+                                camera: camera)
         wireEvents()
         setupStatusItem()
         player.start()
@@ -66,6 +70,91 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 if playing && react { self?.levels.start() } else { self?.levels.stop() }
             }
             .store(in: &cancellables)
+
+        wireCamera()
+    }
+
+    // MARK: Camera
+
+    private func wireCamera() {
+        Publishers.CombineLatest4(settings.$cameraEnabled, settings.$lookToWake, settings.$airGestures, settings.$walkAwayPause)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] on, look, gestures, away in
+                self?.camera.configure(enabled: on, look: look, gestures: gestures, away: away)
+            }
+            .store(in: &cancellables)
+
+        camera.$looking
+            .receive(on: RunLoop.main)
+            .sink { [weak self] in self?.notch.setLooking($0) }
+            .store(in: &cancellables)
+
+        camera.onPrompt = { [weak self] symbol, title, subtitle, seconds in
+            self?.notch.show(.init(symbol: symbol, color: .systemTeal, title: title, subtitle: subtitle, duration: seconds))
+        }
+
+        camera.onGesture = { [weak self] gesture in
+            guard let self, self.player.track != nil else { return }
+            let tint = self.player.tint
+            switch gesture {
+            case .playPause:
+                self.player.playPause()
+                let playing = self.player.isPlaying
+                self.notch.show(.init(symbol: playing ? "play.fill" : "pause.fill", color: tint,
+                                      title: playing ? "Playing" : "Paused", subtitle: "✋ open palm", duration: 1.5))
+            case .next:
+                self.player.next()
+                self.notch.show(.init(symbol: "forward.fill", color: tint, title: "Next track", subtitle: "👉 swipe", duration: 1.5))
+            case .previous:
+                self.player.previous()
+                self.notch.show(.init(symbol: "backward.fill", color: tint, title: "Previous track", subtitle: "👈 swipe", duration: 1.5))
+            }
+            self.notch.ripple(tint)
+        }
+
+        camera.onAway = { [weak self] in
+            guard let self else { return }
+            if self.player.isPlaying {
+                self.player.playPause()
+                self.pausedForAway = true
+            }
+            self.focus.pause()
+        }
+
+        camera.onReturn = { [weak self] gone in
+            guard let self else { return }
+            var bits = ["away \(clock(gone))"]
+            if self.pausedForAway {
+                self.pausedForAway = false
+                if !self.player.isPlaying {
+                    self.player.playPause()
+                    bits.append("music resumed")
+                }
+            }
+            if self.focus.isPaused {
+                self.focus.resume()
+                bits.append("focus resumed")
+            }
+            guard bits.count > 1 || gone > 60 else { return }
+            self.notch.show(.init(symbol: "hand.wave.fill", color: .systemYellow, title: "Welcome back",
+                                  subtitle: bits.joined(separator: " · ")))
+        }
+
+        // Never watch while the screen is asleep or locked.
+        let ws = NSWorkspace.shared.notificationCenter
+        ws.addObserver(forName: NSWorkspace.screensDidSleepNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.camera.setSuspended(true)
+        }
+        ws.addObserver(forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.camera.setSuspended(false)
+        }
+        let dnc = DistributedNotificationCenter.default()
+        dnc.addObserver(forName: .init("com.apple.screenIsLocked"), object: nil, queue: .main) { [weak self] _ in
+            self?.camera.setSuspended(true)
+        }
+        dnc.addObserver(forName: .init("com.apple.screenIsUnlocked"), object: nil, queue: .main) { [weak self] _ in
+            self?.camera.setSuspended(false)
+        }
     }
 
     // MARK: hum:// URL scheme
@@ -92,7 +181,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case "task":
             tracker.task(event: q["event"] ?? "", id: q["id"] ?? "", label: q["label"] ?? "", ok: q["ok"] != "0")
         case "settings":
-            notch.openSettings()
+            notch.openSettings(tab: q["tab"] == "camera" ? 1 : 0)
         case "focus":
             if let m = Int(q["minutes"] ?? "") { focus.start(minutes: m) }
             else if q["action"] == "stop" { focus.stop() }
@@ -121,6 +210,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem.button?.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: "Hum")
         let menu = NSMenu()
         menu.delegate = self
+        menu.autoenablesItems = false
         statusItem.menu = menu
     }
 
@@ -131,7 +221,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let status = NSMenuItem(title: "Focusing · \(clock(focus.remaining())) left", action: nil, keyEquivalent: "")
             status.isEnabled = false
             menu.addItem(status)
-            menu.addItem(ActionItem("Add 5 Minutes") { [weak self] in self?.focus.extend(minutes: 5) })
+            if focus.isPaused {
+                menu.addItem(ActionItem("Resume Focus") { [weak self] in self?.focus.resume() })
+            } else {
+                menu.addItem(ActionItem("Add 5 Minutes") { [weak self] in self?.focus.extend(minutes: 5) })
+            }
             menu.addItem(ActionItem("Stop Focus") { [weak self] in self?.focus.stop() })
         } else {
             for m in [25, 50, 90] {
@@ -149,6 +243,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(ActionItem(title, on: settings[keyPath: key]) { [weak self] in self?.settings[keyPath: key].toggle() })
         }
 
+        menu.addItem(.separator())
+        menu.addItem(ActionItem("Camera", on: settings.cameraEnabled) { [weak self] in self?.settings.cameraEnabled.toggle() })
+        let cameraToggles: [(String, ReferenceWritableKeyPath<Settings, Bool>)] = [
+            ("    Look to Wake", \.lookToWake), ("    Air Gestures", \.airGestures), ("    Walk-Away Pause", \.walkAwayPause),
+        ]
+        for (title, key) in cameraToggles {
+            let item = ActionItem(title, on: settings[keyPath: key]) { [weak self] in self?.settings[keyPath: key].toggle() }
+            item.isEnabled = settings.cameraEnabled
+            menu.addItem(item)
+        }
+        menu.addItem(ActionItem(camera.calibrated ? "    Recalibrate Gaze…" : "    Calibrate Gaze…") { [weak self] in
+            self?.settings.cameraEnabled = true
+            self?.camera.calibrate()
+        })
+
+        menu.addItem(.separator())
         menu.addItem(ActionItem("Open Settings in Notch") { [weak self] in self?.notch.openSettings() })
 
         menu.addItem(.separator())

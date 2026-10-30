@@ -11,16 +11,26 @@ final class Settings: ObservableObject {
     @Published var workStatus: Bool { didSet { save("workStatus", workStatus) } }
     @Published var notifications: Bool { didSet { save("notifications", notifications) } }
 
+    @Published var cameraEnabled: Bool { didSet { save("cameraEnabled", cameraEnabled) } }
+    @Published var lookToWake: Bool { didSet { save("lookToWake", lookToWake) } }
+    @Published var airGestures: Bool { didSet { save("airGestures", airGestures) } }
+    @Published var walkAwayPause: Bool { didSet { save("walkAwayPause", walkAwayPause) } }
+
     private init() {
         let d = UserDefaults.standard
         d.register(defaults: ["reactToAudio": true, "ambientGlow": true, "peekOnTrackChange": true,
-                              "focusNudges": true, "workStatus": true, "notifications": true])
+                              "focusNudges": true, "workStatus": true, "notifications": true,
+                              "cameraEnabled": false, "lookToWake": true, "airGestures": true, "walkAwayPause": true])
         reactToAudio = d.bool(forKey: "reactToAudio")
         ambientGlow = d.bool(forKey: "ambientGlow")
         peekOnTrackChange = d.bool(forKey: "peekOnTrackChange")
         focusNudges = d.bool(forKey: "focusNudges")
         workStatus = d.bool(forKey: "workStatus")
         notifications = d.bool(forKey: "notifications")
+        cameraEnabled = d.bool(forKey: "cameraEnabled")
+        lookToWake = d.bool(forKey: "lookToWake")
+        airGestures = d.bool(forKey: "airGestures")
+        walkAwayPause = d.bool(forKey: "walkAwayPause")
     }
 
     private func save(_ key: String, _ value: Bool) { UserDefaults.standard.set(value, forKey: key) }

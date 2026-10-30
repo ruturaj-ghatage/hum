@@ -34,6 +34,7 @@ struct NotchView: View {
     @ObservedObject var tracker: ActivityTracker
     @ObservedObject var settings: Settings
     let levels: AudioLevels
+    @ObservedObject var camera: CameraSensor
 
     /// Physics: how far the expanded notch is pulled down / swiped sideways.
     @State private var pull: CGFloat = 0
@@ -265,13 +266,18 @@ struct NotchView: View {
                     Text(clock(focus.remaining(at: ctx.date)))
                         .font(.system(size: 26, weight: .semibold).monospacedDigit())
                         .foregroundStyle(.white)
-                    Text(focus.slips == 0 ? "No slips yet" : "\(focus.slips) slip\(focus.slips == 1 ? "" : "s")")
+                    Text(focus.isPaused ? "Paused — you stepped away"
+                         : focus.slips == 0 ? "No slips yet" : "\(focus.slips) slip\(focus.slips == 1 ? "" : "s")")
                         .font(.system(size: 11))
                         .foregroundStyle(.white.opacity(0.55))
                 }
                 Spacer()
                 VStack(spacing: 8) {
-                    PillButton(title: "+5 min") { focus.extend(minutes: 5) }
+                    if focus.isPaused {
+                        PillButton(title: "Resume") { focus.resume() }
+                    } else {
+                        PillButton(title: "+5 min") { focus.extend(minutes: 5) }
+                    }
                     PillButton(title: "Stop") { focus.stop() }
                 }
             }
@@ -303,10 +309,31 @@ struct NotchView: View {
 
     private var settingsPanel: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("SETTINGS")
+            HStack(spacing: 14) {
+                tabButton("GENERAL", tab: 0)
+                tabButton("CAMERA", tab: 1)
+            }
+            if model.settingsTab == 0 { generalSettings } else { cameraSettings }
+        }
+        .padding(.top, n.height + 2)
+        .padding(.horizontal, 20)
+    }
+
+    private func tabButton(_ title: String, tab: Int) -> some View {
+        Button { withAnimation(.easeOut(duration: 0.15)) { model.settingsTab = tab } } label: {
+            Text(title)
                 .font(.system(size: 10, weight: .bold))
                 .tracking(1)
-                .foregroundStyle(.white.opacity(0.5))
+                .foregroundStyle(.white.opacity(model.settingsTab == tab ? 0.95 : 0.4))
+                .padding(.vertical, 2)
+                .overlay(alignment: .bottom) {
+                    if model.settingsTab == tab { Capsule().fill(.white).frame(height: 2).offset(y: 4) }
+                }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var generalSettings: some View {
             Grid(horizontalSpacing: 8, verticalSpacing: 8) {
                 GridRow {
                     SettingPill(symbol: "waveform", title: "React to audio", isOn: $settings.reactToAudio)
@@ -321,9 +348,52 @@ struct NotchView: View {
                     SettingPill(symbol: "bell.badge.fill", title: "Notifications", isOn: $settings.notifications)
                 }
             }
+    }
+
+    private var cameraSettings: some View {
+        let on = settings.cameraEnabled
+        return Grid(horizontalSpacing: 8, verticalSpacing: 8) {
+            GridRow {
+                SettingPill(symbol: "camera.fill", title: "Camera", isOn: $settings.cameraEnabled)
+                ActionPill(symbol: camera.calibrating ? "scope" : "viewfinder",
+                           title: camera.calibrating ? "Calibrating…" : camera.calibrated ? "Recalibrate gaze" : "Calibrate gaze") {
+                    camera.calibrate()
+                }
+            }
+            GridRow {
+                SettingPill(symbol: "eye.fill", title: camera.calibrated ? "Look to wake" : "Look to wake ⓘ", isOn: $settings.lookToWake)
+                    .disabled(!on).opacity(on ? 1 : 0.4)
+                    .help(camera.calibrated ? "Glance up at the notch to open it" : "Calibrate gaze first")
+                SettingPill(symbol: "hand.raised.fill", title: "Air gestures", isOn: $settings.airGestures)
+                    .disabled(!on).opacity(on ? 1 : 0.4)
+                    .help("Open palm: play/pause · swipe: next/previous")
+            }
+            GridRow {
+                SettingPill(symbol: "figure.walk", title: "Walk-away pause", isOn: $settings.walkAwayPause)
+                    .disabled(!on).opacity(on ? 1 : 0.4)
+                    .help("Pause music and focus when you leave")
+                cameraStatus
+            }
         }
-        .padding(.top, n.height + 2)
-        .padding(.horizontal, 20)
+    }
+
+    private var cameraStatus: some View {
+        let (text, color): (String, Color) = switch camera.status {
+        case .off: ("Camera off", .white.opacity(0.4))
+        case .denied: ("No camera access", .red)
+        case .noFace: ("Can't see you", .orange)
+        case .watching: (camera.looking ? "Looking at notch" : "Watching", .green)
+        }
+        return HStack(spacing: 6) {
+            Circle().fill(color).frame(width: 7, height: 7)
+            Text(text)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.white.opacity(0.7))
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, minHeight: 30)
     }
 
     // MARK: Toast
@@ -636,6 +706,37 @@ struct SettingPill: View {
         .buttonStyle(.plain)
         .onHover { hover = $0 }
         .animation(.easeOut(duration: 0.15), value: isOn)
+    }
+}
+
+/// A one-shot action styled like a settings pill.
+struct ActionPill: View {
+    let symbol: String
+    let title: String
+    let action: () -> Void
+    @State private var hover = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: symbol)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 22, height: 22)
+                    .background(Circle().fill(Color.teal.opacity(0.6)))
+                Text(title)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 5)
+            .frame(maxWidth: .infinity, minHeight: 30)
+            .background(Capsule().fill(.white.opacity(hover ? 0.14 : 0.08)))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { hover = $0 }
     }
 }
 

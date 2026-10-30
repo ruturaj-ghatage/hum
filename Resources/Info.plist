@@ -37,6 +37,8 @@
 	<string>Hum reads whats playing in Spotify and Music, lets you control playback from the notch, and checks your browsers current site during Focus.</string>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>Hum listens to what your Mac is playing so the notch can move to the beat. Nothing is recorded or saved.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Hum uses the camera only when you turn on Camera features: to notice when you look at the notch, wave a hand to control music, or step away. Video is analyzed on your Mac and never saved.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 </dict>

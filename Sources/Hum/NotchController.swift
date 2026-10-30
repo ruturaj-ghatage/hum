@@ -34,6 +34,7 @@ final class NotchModel: ObservableObject {
         var color: NSColor
         var title: String
         var subtitle: String = ""
+        var duration: TimeInterval = 3.8
     }
 
     struct Ripple: Identifiable, Equatable {
@@ -46,6 +47,8 @@ final class NotchModel: ObservableObject {
     @Published var dragging = false
     @Published var dismissed = false
     @Published var showSettings = false
+    @Published var settingsTab = 0 // 0 general, 1 camera
+    @Published var looking = false
     @Published var toast: Toast?
     @Published var ripple: Ripple?
     @Published var shakes: CGFloat = 0
@@ -75,7 +78,7 @@ final class NotchModel: ObservableObject {
     }
 
     var mode: Mode {
-        if (hovering || peeking) && canExpand && !dismissed { return .expanded }
+        if (hovering || peeking || looking) && canExpand && !dismissed { return .expanded }
         if toast != nil { return .toast }
         return wings == .none ? .idle : .compact
     }
@@ -107,12 +110,13 @@ final class NotchController {
     private var toastQueue: [NotchModel.Toast] = []
     private var cancellables = Set<AnyCancellable>()
 
-    init(player: NowPlaying, focus: FocusGuardian, tracker: ActivityTracker, settings: Settings, levels: AudioLevels) {
+    init(player: NowPlaying, focus: FocusGuardian, tracker: ActivityTracker, settings: Settings, levels: AudioLevels,
+         camera: CameraSensor) {
         self.player = player
         model = NotchModel(player: player, focus: focus, tracker: tracker, settings: settings)
 
         let host = NSHostingView(rootView: NotchView(model: model, player: player, focus: focus, tracker: tracker,
-                                                     settings: settings, levels: levels))
+                                                     settings: settings, levels: levels, camera: camera))
         host.sizingOptions = []
         panel.contentView = host
 
@@ -161,7 +165,7 @@ final class NotchController {
         guard !toastQueue.isEmpty else { return }
         let t = toastQueue.removeFirst()
         model.toast = t
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.8) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + t.duration) { [weak self] in
             guard let self, self.model.toast?.id == t.id else { return }
             self.model.toast = nil
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { self.presentNextToast() }
@@ -213,9 +217,17 @@ final class NotchController {
         }
     }
 
+    /// Look to wake: open while the camera says you're looking at the notch.
+    func setLooking(_ looking: Bool) {
+        guard model.looking != looking else { return }
+        model.looking = looking
+        if looking { player.resync() }
+    }
+
     /// Opens the notch on the settings panel for a few seconds (or until the cursor leaves it).
-    func openSettings() {
+    func openSettings(tab: Int = 0) {
         peekWork?.cancel()
+        model.settingsTab = tab
         model.showSettings = true
         model.peeking = true
         let work = DispatchWorkItem { [weak self] in
